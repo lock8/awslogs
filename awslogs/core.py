@@ -108,11 +108,10 @@ class AWSLogs(object):
                             'green'
                         )
                     )
-                if self.output_stream_enabled:
+                if self.output_stream_enabled and max_stream_length:
                     output.append(
                         self.color(
-                            event['logStreamName'].ljust(max_stream_length,
-                                                         ' '),
+                            event['logStreamName'][:self.max_stream_length].ljust(max_stream_length, ' '),
                             'cyan'
                         )
                     )
