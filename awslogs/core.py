@@ -70,17 +70,22 @@ class AWSLogs(object):
             if re.match(reg, stream):
                 yield stream
 
-    def list_logs(self):
-        streams = []
+    def _get_streams_for_list_logs(self):
         if self.log_stream_name != self.ALL_WILDCARD:
-            streams = list(self._get_streams_from_pattern(self.log_group_name, self.log_stream_name))
+            streams = list(self._get_streams_from_pattern(self.log_group_name,
+                                                          self.log_stream_name))
             if len(streams) > self.FILTER_LOG_EVENTS_STREAMS_LIMIT:
                 raise exceptions.TooManyStreamsFilteredError(
                      self.log_stream_name,
                      len(streams),
                      self.FILTER_LOG_EVENTS_STREAMS_LIMIT
                 )
+            return streams
+        else:
+            return list(self.get_streams(self.log_group_name))
 
+    def list_logs(self):
+        streams = self._get_streams_for_list_logs()
         max_stream_length = max([len(s) for s in streams]) if streams else 10
         group_length = len(self.log_group_name)
 
@@ -130,6 +135,19 @@ class AWSLogs(object):
                 output.append(event['message'])
                 print(' '.join(output))
 
+        def refresh_streams():
+            """
+            Refresh the list of streams every 5s.
+            Because some new streams might appear during
+            watching process.
+            """
+            if not self.watch:
+                return
+            while not exit.is_set():
+                # Refresh the same shared `streams` list object.
+                streams[:] = self._get_streams_for_list_logs()
+                time.sleep(5)
+
         def generator():
             """Push events into queue trying to deduplicate them using a lru queue.
             AWS API stands for the interleaved parameter that:
@@ -148,8 +166,7 @@ class AWSLogs(object):
             kwargs = {'logGroupName': self.log_group_name,
                       'interleaved': True}
 
-            if streams:
-                kwargs['logStreamNames'] = streams
+            kwargs['logStreamNames'] = streams
 
             if self.start:
                 kwargs['startTime'] = self.start
@@ -162,7 +179,6 @@ class AWSLogs(object):
 
             while not exit.is_set():
                 response = self.client.filter_log_events(**kwargs)
-
                 for event in response.get('events', []):
                     if event['eventId'] not in interleaving_sanity:
                         interleaving_sanity.append(event['eventId'])
@@ -176,6 +192,9 @@ class AWSLogs(object):
                     else:
                         queue.put(None)
                         break
+
+        rs = Thread(target=refresh_streams, daemon=True)
+        rs.start()
 
         g = Thread(target=generator)
         g.start()
