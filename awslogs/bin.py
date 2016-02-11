@@ -1,7 +1,5 @@
 import os
 import sys
-import locale
-import codecs
 import argparse
 
 import boto3
@@ -16,7 +14,6 @@ __version__ = "0.3.0"
 
 
 def main(argv=None):
-    sys.stdout = codecs.getwriter(locale.getpreferredencoding())(sys.stdout)
 
     argv = (argv or sys.argv)[1:]
 
